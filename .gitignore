@@ -14,6 +14,3 @@ models/
 .vscode/
 
 .ipynb_checkpoints/
-*.ipynb
-
-test.py
