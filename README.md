@@ -58,7 +58,7 @@ The ML workflow is designed for reproducibility and consistency between training
 
 *   **Training**: Run `python src/ml/train.py` to train the `CatBoost` model. The artifact is saved to `models/catboost_churn_model.pkl`.
 *   **Preprocessing**: All feature engineering logic is centralized in [`src/ml/preprocessor.py`](src/ml/preprocessor.py). This ensures the API processes raw input exactly how the model expects it.
-*   **Experiments**: Check the `notebooks/` directory for exploratory data analysis and model tuning experiments (numbered `01_...` to `06_...`).
+*   **Experiments**: Check the `notebooks/` directory for exploratory data analysis and model tuning experiments.
 
 ## Project Structure
 
