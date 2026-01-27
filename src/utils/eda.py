@@ -68,7 +68,7 @@ class DataAnalyzer:
 
     def check_duplicates(self):
         num_duplicates = self.data.duplicated().sum()
-        print(f"\nTekrar eden satır sayısı: {num_duplicates}")
+        print(f"Tekrar eden satır sayısı: {num_duplicates}")
         return num_duplicates
 
     def summarize_numerical(self):
