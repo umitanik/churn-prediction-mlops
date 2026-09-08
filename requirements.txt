@@ -1,8 +1,11 @@
+# Runtime dependencies: API, dashboard and model training.
 fastapi
 uvicorn
 pandas
+numpy
 scikit-learn==1.7.2
 catboost
+joblib
 sqlalchemy
 psycopg2-binary
 streamlit

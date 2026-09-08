@@ -3,9 +3,7 @@
 env/
 __pycache__/
 
-data/
-*.csv
-
+data/processed/
 *.pkl
 *.h5
 models/
