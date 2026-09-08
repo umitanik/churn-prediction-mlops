@@ -31,7 +31,7 @@ class DataAnalyzer:
             print(self.summarize_categorical())
 
     def get_general_info(self):
-        print(f"Veri Seti Boyutu: {self.data.shape}")
+        print(f"Dataset Shape: {self.data.shape}")
         
     def check_columns_summary(self):
         summary_df = pd.DataFrame({
@@ -50,7 +50,7 @@ class DataAnalyzer:
         missing_df = missing_df[missing_df['Missing Count'] > 0].sort_values(by='Percentage', ascending=False)
         
         if missing_df.empty:
-            print("Veri setinde hiç eksik değer yok.")
+            print("No missing values in the dataset.")
         else:
             print(missing_df)
             
@@ -68,7 +68,7 @@ class DataAnalyzer:
 
     def check_duplicates(self):
         num_duplicates = self.data.duplicated().sum()
-        print(f"Tekrar eden satır sayısı: {num_duplicates}")
+        print(f"Number of duplicate rows: {num_duplicates}")
         return num_duplicates
 
     def summarize_numerical(self):

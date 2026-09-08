@@ -31,7 +31,7 @@ class DataVisualizer(DataAnalyzer):
         plot_cols = [c for c in cat_cols if self.data[c].nunique() <= limit]
         
         if not plot_cols:
-            print("Grafik çizilecek uygun kategorik değişken yok.")
+            print("No suitable categorical variables to plot.")
             return 
         
         n_rows, n_cols, figsize = self._get_grid_params(plot_cols)
