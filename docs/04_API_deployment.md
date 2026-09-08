@@ -61,7 +61,7 @@ The final stage is to serve the trained **CatBoost** model via a high-performanc
 
 ### Lifespan Event Handler
 The application uses FastAPI's `lifespan` context manager to handle startup and shutdown events efficiently:
-1.  **Startup:** Initializes the SQLite database tables and loads the Machine Learning model & Preprocessor into memory *once* (preventing reload latency).
+1.  **Startup:** Initializes the PostgreSQL tables and loads the Machine Learning model & Preprocessor into `app.state` *once* (preventing reload latency). A missing model artifact is fatal: the app refuses to start rather than serving `503` for every request.
 2.  **Shutdown:** Cleans up resources.
 
 ### Database Integration
@@ -73,5 +73,5 @@ The system uses `SQLAlchemy` ORM to interact with the database. The `PredictionL
 ## 5. How to Run
 To start the API server locally:
 ```bash
-python src/api/API.py
+uv run uvicorn src.api.main:app --reload
 ```

@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   db:
     image: postgres:13
@@ -9,9 +7,16 @@ services:
       POSTGRES_PASSWORD: 654321
       POSTGRES_DB: churn_db
     ports:
-      - "5432:5432"
+      # Published on 5433 so the stack still starts when a local PostgreSQL is
+      # already using 5432. Services reach each other as db:5432 regardless.
+      - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d churn_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   backend:
     build:
@@ -19,13 +24,22 @@ services:
       dockerfile: Dockerfile.backend
     container_name: churn_api
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     ports:
       - "8000:8000"
     environment:
       - DATABASE_URL=postgresql://admin:654321@db:5432/churn_db
     volumes:
-      - ./models:/app/models 
+      # The only way the model reaches the container. Train it on the host with
+      # 'uv run python -m src.ml.train' before starting the stack.
+      - ./models:/app/models
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
 
   frontend:
     build:
@@ -33,7 +47,8 @@ services:
       dockerfile: Dockerfile.frontend
     container_name: churn_dashboard
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     ports:
       - "8501:8501"
     environment:
