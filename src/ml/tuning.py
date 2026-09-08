@@ -1,35 +1,54 @@
 import os
 import sys
-import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
+import optuna
+import pandas as pd
 from catboost import CatBoostClassifier
 from sklearn.ensemble import GradientBoostingClassifier
+from sklearn.feature_selection import VarianceThreshold
 from sklearn.model_selection import StratifiedKFold, cross_val_score
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import MinMaxScaler
-from sklearn.feature_selection import VarianceThreshold
-import optuna
 
-from src.ml.preprocessor import CustomerChurnPreprocessor
+from src.data.split_dataset import PROCESSED_DIR, ensure_split
+from src.ml.preprocessor import CustomerChurnPreprocessor, build_encoder
 
-print("Veri yükleniyor ve işleniyor...")
-train_data = pd.read_csv('data/processed/train.csv')
-
-preprocessor = CustomerChurnPreprocessor()
-train_data_processed = preprocessor.preprocess(train_data)
-
-X_train = train_data_processed.drop('Exited', axis=1)
-y_train = train_data_processed['Exited']
-
-print(f"Eğitim Seti Boyutu: {X_train.shape}")
+N_TRIALS = 50
 
 
+def load_training_data(processed_dir=PROCESSED_DIR):
+    print("Loading and preprocessing data...")
+    train_path, _, _ = ensure_split(processed_dir=processed_dir)
+    train_data = pd.read_csv(train_path)
 
-def objective_gb(trial):
+    preprocessor = CustomerChurnPreprocessor()
+    train_data_processed = preprocessor.preprocess(train_data)
+
+    X_train = train_data_processed.drop('Exited', axis=1)
+    y_train = train_data_processed['Exited']
+
+    print(f"Training Set Size: {X_train.shape}")
+    return X_train, y_train
+
+
+def _cross_val_score(estimator, X_train, y_train):
+    pipeline = make_pipeline(
+        build_encoder(),
+        VarianceThreshold(threshold=0),
+        MinMaxScaler(),
+        estimator
+    )
+
+    cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+
+    scores = cross_val_score(pipeline, X_train, y_train, cv=cv, scoring='roc_auc', n_jobs=-1)
+
+    return scores.mean()
+
+
+def objective_gb(trial, X_train, y_train):
     params = {
         'n_estimators': trial.suggest_int('n_estimators', 100, 1000),
         'learning_rate': trial.suggest_float('learning_rate', 0.001, 0.1, log=True),
@@ -39,20 +58,11 @@ def objective_gb(trial):
         'subsample': trial.suggest_float('subsample', 0.5, 1.0),
         'random_state': 42
     }
-    
-    pipeline = make_pipeline(
-        VarianceThreshold(threshold=0),
-        MinMaxScaler(),
-        GradientBoostingClassifier(**params)
-    )
-    
-    cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
-    
-    scores = cross_val_score(pipeline, X_train, y_train, cv=cv, scoring='roc_auc', n_jobs=-1)
-    
-    return scores.mean()
 
-def objective_cat(trial):
+    return _cross_val_score(GradientBoostingClassifier(**params), X_train, y_train)
+
+
+def objective_cat(trial, X_train, y_train):
     params = {
         'iterations': trial.suggest_int('iterations', 100, 1000),
         'learning_rate': trial.suggest_float('learning_rate', 0.001, 0.1, log=True),
@@ -61,36 +71,34 @@ def objective_cat(trial):
         'border_count': trial.suggest_int('border_count', 32, 255),
         'subsample': trial.suggest_float('subsample', 0.5, 1.0),
         'random_state': 42,
-        'verbose': 0,  
+        'verbose': 0,
         'allow_writing_files': False
     }
-    
-    pipeline = make_pipeline(
-        VarianceThreshold(threshold=0),
-        MinMaxScaler(),
-        CatBoostClassifier(**params)
-    )
-    
-    cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
-    
-    scores = cross_val_score(pipeline, X_train, y_train, cv=cv, scoring='roc_auc', n_jobs=-1)
-    
-    return scores.mean()
 
-print("1. Gradient Boosting Optimizasyonu Başlıyor...")
-study_gb = optuna.create_study(direction='maximize')
-study_gb.optimize(objective_gb, n_trials=50) 
+    return _cross_val_score(CatBoostClassifier(**params), X_train, y_train)
 
-print("\n2. CatBoost Optimizasyonu Başlıyor...")
-study_cat = optuna.create_study(direction='maximize')
-study_cat.optimize(objective_cat, n_trials=50)
 
-print("-" * 50)
-print("SONUÇLAR")
-print("-" * 50)
-print(f"Gradient Boosting En İyi Skor (ROC-AUC): {study_gb.best_value:.4f}")
-print("En İyi Parametreler:", study_gb.best_params)
-print("-" * 50)
-print(f"CatBoost En İyi Skor (ROC-AUC): {study_cat.best_value:.4f}")
-print("En İyi Parametreler:", study_cat.best_params)
-print("-" * 50)
+def main():
+    X_train, y_train = load_training_data()
+
+    print("1. Starting Gradient Boosting Optimization...")
+    study_gb = optuna.create_study(direction='maximize')
+    study_gb.optimize(lambda trial: objective_gb(trial, X_train, y_train), n_trials=N_TRIALS)
+
+    print("\n2. Starting CatBoost Optimization...")
+    study_cat = optuna.create_study(direction='maximize')
+    study_cat.optimize(lambda trial: objective_cat(trial, X_train, y_train), n_trials=N_TRIALS)
+
+    print("-" * 50)
+    print("RESULTS")
+    print("-" * 50)
+    print(f"Gradient Boosting Best Score (ROC-AUC): {study_gb.best_value:.4f}")
+    print("Best Parameters:", study_gb.best_params)
+    print("-" * 50)
+    print(f"CatBoost Best Score (ROC-AUC): {study_cat.best_value:.4f}")
+    print("Best Parameters:", study_cat.best_params)
+    print("-" * 50)
+
+
+if __name__ == "__main__":
+    main()
