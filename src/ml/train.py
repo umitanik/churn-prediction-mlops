@@ -1,6 +1,7 @@
 import argparse
 import os
 import sys
+from datetime import datetime, timezone
 
 import joblib
 import pandas as pd
@@ -73,6 +74,8 @@ def train(model_dir=MODEL_DIR, processed_dir=PROCESSED_DIR):
     final_pipeline = build_pipeline()
     final_pipeline.fit(X_train, y_train)
 
+    final_pipeline.model_version_ = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+
     y_pred = final_pipeline.predict(X_test)
     y_prob = final_pipeline.predict_proba(X_test)[:, 1]
     roc_score = roc_auc_score(y_test, y_prob)
@@ -87,6 +90,7 @@ def train(model_dir=MODEL_DIR, processed_dir=PROCESSED_DIR):
     model_path = os.path.join(model_dir, MODEL_FILENAME)
     joblib.dump(final_pipeline, model_path)
     print(f"\n Model and Pipeline successfully saved to: {model_path}")
+    print(f" Model version: {final_pipeline.model_version_}")
 
     return model_path, roc_score
 

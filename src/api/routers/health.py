@@ -29,5 +29,6 @@ def health(request: Request, response: Response, db: Session = Depends(get_db)):
         status="ok" if healthy else "degraded",
         model_loaded=model_loaded,
         model_path=MODEL_PATH,
+        model_version=getattr(request.app.state, "model_version", "unknown"),
         database=database_status,
     )

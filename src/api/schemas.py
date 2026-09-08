@@ -57,6 +57,10 @@ class PredictionLogOut(BaseModel):
     has_cr_card: int
     is_active_member: int
     estimated_salary: float
+    card_type: Optional[str]
+    satisfaction_score: Optional[int]
+    point_earned: Optional[int]
+    model_version: Optional[str]
     prediction_label: str
     churn_probability: float
 
@@ -67,6 +71,7 @@ class HealthResponse(BaseModel):
     status: str
     model_loaded: bool
     model_path: str
+    model_version: str
     database: str
 
 

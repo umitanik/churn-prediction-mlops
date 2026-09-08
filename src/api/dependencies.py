@@ -27,3 +27,6 @@ def get_preprocessor(request: Request):
     if preprocessor is None:
         raise HTTPException(status_code=503, detail="Preprocessor is not loaded.")
     return preprocessor
+
+def get_model_version(request: Request) -> str:
+    return getattr(request.app.state, "model_version", "unknown")

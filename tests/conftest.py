@@ -9,7 +9,11 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 os.chdir(PROJECT_ROOT)
 
-os.environ["DATABASE_URL"] = f"sqlite:///{Path(tempfile.mkdtemp()) / 'test.db'}"
+# setdefault, not assignment: a second import of this module must reuse the
+# first database rather than silently pointing at a fresh empty one.
+os.environ.setdefault(
+    "DATABASE_URL", f"sqlite:///{Path(tempfile.mkdtemp()) / 'test.db'}"
+)
 
 import joblib
 import pandas as pd
@@ -38,6 +42,22 @@ VALID_PAYLOAD = {
     "SatisfactionScore": 3,
     "PointEarned": 500,
 }
+
+
+@pytest.fixture(scope="session", autouse=True)
+def database_schema():
+    """Create the test schema by running the real migrations.
+
+    Using Alembic here rather than create_all() means the suite exercises the
+    same path production uses, so a migration that no longer matches the models
+    fails in CI instead of at deploy time.
+    """
+    from alembic import command
+    from alembic.config import Config
+
+    config = Config(str(PROJECT_ROOT / "alembic.ini"))
+    config.set_main_option("script_location", str(PROJECT_ROOT / "alembic"))
+    command.upgrade(config, "head")
 
 
 @pytest.fixture(scope="session")

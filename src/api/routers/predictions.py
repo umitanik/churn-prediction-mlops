@@ -2,7 +2,12 @@ import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from src.api.dependencies import get_db, get_model, get_preprocessor
+from src.api.dependencies import (
+    get_db,
+    get_model,
+    get_model_version,
+    get_preprocessor,
+)
 from src.api.schemas import CustomerInput, PredictionResponse
 from src.database.db import PredictionLog
 
@@ -15,6 +20,7 @@ def predict_churn(
     db: Session = Depends(get_db),
     model=Depends(get_model),
     preprocessor=Depends(get_preprocessor),
+    model_version: str = Depends(get_model_version),
 ):
     df = pd.DataFrame([customer.to_model_row()])
 
@@ -41,6 +47,10 @@ def predict_churn(
         has_cr_card=customer.HasCrCard,
         is_active_member=customer.IsActiveMember,
         estimated_salary=customer.EstimatedSalary,
+        card_type=customer.CardType,
+        satisfaction_score=customer.SatisfactionScore,
+        point_earned=customer.PointEarned,
+        model_version=model_version,
         prediction_label=result_label,
         churn_probability=float(probability),
     )
