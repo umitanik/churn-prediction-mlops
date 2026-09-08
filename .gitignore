@@ -12,3 +12,4 @@ models/
 .vscode/
 
 .ipynb_checkpoints/
+*.db
