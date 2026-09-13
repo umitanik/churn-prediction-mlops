@@ -1,8 +1,13 @@
+import logging
 import argparse
 import os
 
 import pandas as pd
 from sklearn.model_selection import train_test_split
+
+from src.logging_config import configure_logging
+
+logger = logging.getLogger(__name__)
 
 RAW_PATH = os.path.join('data', 'raw', 'Customer-Churn-Records.csv')
 PROCESSED_DIR = os.path.join('data', 'processed')
@@ -32,13 +37,14 @@ def create_split(raw_path=RAW_PATH, processed_dir=PROCESSED_DIR):
         )
 
     data = pd.read_csv(raw_path)
-    print(f"Raw dataset loaded: {data.shape}")
+    logger.info(f"Raw dataset loaded: {data.shape}")
 
     train_data, test_data = train_test_split(
         data,
         test_size=TEST_SIZE,
         random_state=RANDOM_STATE,
-        shuffle=True
+        shuffle=True,
+        stratify=data[TARGET_COL],
     )
 
     os.makedirs(processed_dir, exist_ok=True)
@@ -48,22 +54,23 @@ def create_split(raw_path=RAW_PATH, processed_dir=PROCESSED_DIR):
     test_data.drop(columns=TARGET_COL).to_csv(test_path, index=False)
     test_data[[TARGET_COL]].to_csv(ground_truth_path, index=False)
 
-    print(f"Train set saved   ({train_data.shape}): {train_path}")
-    print(f"Test set saved    ({test_data.shape[0]} rows, target removed): {test_path}")
-    print(f"Ground truth saved ({test_data.shape[0]} rows): {ground_truth_path}")
+    logger.info(f"Train set saved   ({train_data.shape}): {train_path}")
+    logger.info(f"Test set saved    ({test_data.shape[0]} rows, target removed): {test_path}")
+    logger.info(f"Ground truth saved ({test_data.shape[0]} rows): {ground_truth_path}")
 
     return train_path, test_path, ground_truth_path
 
 
 def ensure_split(raw_path=RAW_PATH, processed_dir=PROCESSED_DIR, force=False):
     if split_exists(processed_dir) and not force:
-        print(f"Processed split already present in {processed_dir}, skipping.")
+        logger.info(f"Processed split already present in {processed_dir}, skipping.")
         return split_paths(processed_dir)
 
     return create_split(raw_path, processed_dir)
 
 
 def main():
+    configure_logging()
     parser = argparse.ArgumentParser(
         description="Create the reproducible train/test split from the raw dataset."
     )

@@ -1,7 +1,5 @@
+import logging
 import os
-import sys
-
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
 import optuna
 import pandas as pd
@@ -12,6 +10,10 @@ from sklearn.model_selection import StratifiedKFold, cross_val_score
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import MinMaxScaler
 
+from src.logging_config import configure_logging
+
+logger = logging.getLogger(__name__)
+
 from src.data.split_dataset import PROCESSED_DIR, ensure_split
 from src.ml.preprocessor import CustomerChurnPreprocessor, build_encoder
 
@@ -19,7 +21,7 @@ N_TRIALS = 50
 
 
 def load_training_data(processed_dir=PROCESSED_DIR):
-    print("Loading and preprocessing data...")
+    logger.info("Loading and preprocessing data...")
     train_path, _, _ = ensure_split(processed_dir=processed_dir)
     train_data = pd.read_csv(train_path)
 
@@ -29,7 +31,7 @@ def load_training_data(processed_dir=PROCESSED_DIR):
     X_train = train_data_processed.drop('Exited', axis=1)
     y_train = train_data_processed['Exited']
 
-    print(f"Training Set Size: {X_train.shape}")
+    logger.info(f"Training Set Size: {X_train.shape}")
     return X_train, y_train
 
 
@@ -79,25 +81,26 @@ def objective_cat(trial, X_train, y_train):
 
 
 def main():
+    configure_logging()
     X_train, y_train = load_training_data()
 
-    print("1. Starting Gradient Boosting Optimization...")
+    logger.info("1. Starting Gradient Boosting Optimization...")
     study_gb = optuna.create_study(direction='maximize')
     study_gb.optimize(lambda trial: objective_gb(trial, X_train, y_train), n_trials=N_TRIALS)
 
-    print("\n2. Starting CatBoost Optimization...")
+    logger.info("\n2. Starting CatBoost Optimization...")
     study_cat = optuna.create_study(direction='maximize')
     study_cat.optimize(lambda trial: objective_cat(trial, X_train, y_train), n_trials=N_TRIALS)
 
-    print("-" * 50)
-    print("RESULTS")
-    print("-" * 50)
-    print(f"Gradient Boosting Best Score (ROC-AUC): {study_gb.best_value:.4f}")
-    print("Best Parameters:", study_gb.best_params)
-    print("-" * 50)
-    print(f"CatBoost Best Score (ROC-AUC): {study_cat.best_value:.4f}")
-    print("Best Parameters:", study_cat.best_params)
-    print("-" * 50)
+    logger.info("-" * 50)
+    logger.info("RESULTS")
+    logger.info("-" * 50)
+    logger.info(f"Gradient Boosting Best Score (ROC-AUC): {study_gb.best_value:.4f}")
+    logger.info("Best Parameters:", study_gb.best_params)
+    logger.info("-" * 50)
+    logger.info(f"CatBoost Best Score (ROC-AUC): {study_cat.best_value:.4f}")
+    logger.info("Best Parameters:", study_cat.best_params)
+    logger.info("-" * 50)
 
 
 if __name__ == "__main__":
