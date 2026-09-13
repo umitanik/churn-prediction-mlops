@@ -1,9 +1,15 @@
 FROM python:3.10-slim
 
-WORKDIR /app
+COPY --from=ghcr.io/astral-sh/uv:0.11 /uv /uvx /bin/
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+WORKDIR /app
+ENV UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy \
+    PATH="/app/.venv/bin:$PATH"
+
+COPY pyproject.toml uv.lock ./
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --frozen --no-dev --no-install-project --extra dashboard
 
 COPY dashboard.py .
 

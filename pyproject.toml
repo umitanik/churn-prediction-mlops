@@ -1,0 +1,60 @@
+[project]
+name = "churn-prediction"
+version = "1.0.0"
+description = "Bank customer churn prediction: a CatBoost model served by FastAPI, a Streamlit dashboard, and a PostgreSQL audit log."
+requires-python = ">=3.10"
+dependencies = [
+    "pandas>=2.3",
+    "numpy>=2.2",
+]
+
+# Each service installs only what it runs. The API image takes ml + api, the
+# dashboard image takes dashboard, training on the host takes ml.
+[project.optional-dependencies]
+ml = [
+    "scikit-learn==1.7.2",   # pinned: the serialized pipeline depends on it
+    "catboost>=1.2.10",
+    "joblib>=1.6",
+]
+api = [
+    "fastapi>=0.141",
+    "uvicorn>=0.52",
+    "pydantic>=2.13",
+    "sqlalchemy>=2.0",
+    "alembic>=1.19",
+    "psycopg2-binary>=2.9",
+]
+dashboard = [
+    "streamlit>=1.63",
+    "requests>=2.34",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9",
+    "httpx>=0.28",
+    "optuna>=3.6",
+    "lightgbm>=4",
+    "xgboost>=2",
+    "matplotlib>=3.10",
+    "seaborn>=0.13",
+    "jupyter",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --strict-markers"
+filterwarnings = [
+    # Third-party deprecations this project cannot act on. Kept as a narrow
+    # list rather than a blanket "error" filter, so an upstream release cannot
+    # turn CI red without anything here changing.
+    "ignore:Using .httpx. with .starlette.testclient. is deprecated",
+    "ignore:The anyio.abc.BlockingPortal alias is deprecated",
+]

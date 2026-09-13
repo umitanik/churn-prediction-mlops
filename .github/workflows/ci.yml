@@ -16,7 +16,7 @@ jobs:
           enable-cache: true
 
       - name: Install dependencies
-        run: uv venv --python 3.10 && uv pip install -r requirements-dev.txt
+        run: uv sync --all-extras --frozen
 
       - name: Train the model
         run: uv run python -m src.ml.train
@@ -28,6 +28,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Provide a .env for compose
+        run: cp .env.example .env
 
       - name: Build container images
         run: docker compose build
