@@ -1,13 +1,17 @@
 import os
 from datetime import datetime, timezone
+from typing import Optional
 
-from sqlalchemy import DateTime, Float, Integer, String, create_engine
+from sqlalchemy import DateTime, Integer, Numeric, String, create_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "postgresql://admin:654321@localhost:5432/churn_db"
-)
+DATABASE_URL = os.getenv("DATABASE_URL")
+if not DATABASE_URL:
+    raise RuntimeError(
+        "DATABASE_URL is not set. There is no default on purpose: a connection "
+        "string carries credentials and does not belong in source code. "
+        "See .env.example."
+    )
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(bind=engine)
 
@@ -26,7 +30,7 @@ class PredictionLog(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime,
+        DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc)
     )
     customer_id: Mapped[int] = mapped_column(Integer, nullable=True)
@@ -37,11 +41,11 @@ class PredictionLog(Base):
     gender: Mapped[str] = mapped_column(String(10))
     age: Mapped[int] = mapped_column(Integer)
     tenure: Mapped[int] = mapped_column(Integer)
-    balance: Mapped[float] = mapped_column(Float)
+    balance: Mapped[float] = mapped_column(Numeric(12, 2, asdecimal=False))
     num_of_products: Mapped[int] = mapped_column(Integer)
     has_cr_card: Mapped[int] = mapped_column(Integer)
     is_active_member: Mapped[int] = mapped_column(Integer)
-    estimated_salary: Mapped[float] = mapped_column(Float)
+    estimated_salary: Mapped[float] = mapped_column(Numeric(12, 2, asdecimal=False))
 
     card_type: Mapped[str] = mapped_column(String(20), nullable=True)
     satisfaction_score: Mapped[int] = mapped_column(Integer, nullable=True)
@@ -50,4 +54,7 @@ class PredictionLog(Base):
     model_version: Mapped[str] = mapped_column(String(64), nullable=True)
 
     prediction_label: Mapped[str] = mapped_column(String(20))
-    churn_probability: Mapped[float] = mapped_column(Float)
+    churn_probability: Mapped[float] = mapped_column(Numeric(7, 6, asdecimal=False))
+
+    actual_label: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    labeled_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
