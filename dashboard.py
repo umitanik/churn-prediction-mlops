@@ -5,8 +5,9 @@ import requests
 import streamlit as st
 
 API_URL = os.getenv("API_URL", "http://127.0.0.1:8000")
+API_KEY = os.getenv("API_KEY", "")
+HEADERS = {"X-API-Key": API_KEY}
 TIMEOUT = 10
-DECISION_THRESHOLD = 0.5
 
 st.set_page_config(
     page_title="Bank Churn Prediction",
@@ -73,6 +74,16 @@ st.markdown(
         padding: .3rem .6rem; font-size: .75rem; opacity: .85;
       }
       .chip b { font-weight: 700; }
+
+      .drivers { display: flex; flex-direction: column; gap: .35rem; }
+      .driver {
+        display: grid; grid-template-columns: 1fr auto auto; gap: .8rem;
+        align-items: baseline; padding: .45rem .7rem;
+        background: rgba(128, 128, 128, .10); border-radius: 8px; font-size: .85rem;
+      }
+      .driver-name { font-family: ui-monospace, Menlo, monospace; font-size: .8rem; }
+      .driver-val  { font-weight: 700; font-variant-numeric: tabular-nums; }
+      .driver-dir  { opacity: .55; font-size: .75rem; }
     </style>
     """,
     unsafe_allow_html=True,
@@ -91,6 +102,11 @@ def friendly_error(exc):
         )
     if isinstance(exc, requests.Timeout):
         return f"The API at {API_URL} did not respond within {TIMEOUT} seconds."
+    if isinstance(exc, requests.HTTPError) and exc.response is not None and exc.response.status_code == 401:
+        return (
+            "The API rejected the key. Set the same API_KEY for the dashboard "
+            "and the API (see .env.example)."
+        )
     return f"Request to {API_URL} failed: {exc}"
 
 
@@ -105,7 +121,7 @@ def api_health():
 
 def fetch_logs(limit=10):
     try:
-        r = requests.get(f"{API_URL}/logs", params={"limit": limit}, timeout=TIMEOUT)
+        r = requests.get(f"{API_URL}/logs", params={"limit": limit}, headers=HEADERS, timeout=TIMEOUT)
         r.raise_for_status()
         return pd.DataFrame(r.json()), None
     except requests.RequestException as e:
@@ -146,7 +162,7 @@ with col_left:
         i1, i2 = st.columns(2)
         with i1:
             customer_id = st.number_input(
-                "Customer ID", min_value=0, step=1, value=0,
+                "Customer ID", min_value=1, step=1, value=None, placeholder="optional",
                 help="Stored with the prediction so the outcome can be matched later.",
             )
         with i2:
@@ -208,8 +224,8 @@ if submit_btn:
         st.session_state.result = {"error": "Missing fields: " + ", ".join(missing)}
     else:
         payload = {
-            "CustomerId": int(customer_id),
-            "Surname": surname.strip() or "Unknown",
+            "CustomerId": int(customer_id) if customer_id else None,
+            "Surname": surname.strip() or None,
             "CreditScore": int(credit_score),
             "Geography": geography,
             "Gender": gender,
@@ -226,17 +242,24 @@ if submit_btn:
         }
 
         try:
-            response = requests.post(f"{API_URL}/predict", json=payload, timeout=TIMEOUT)
+            response = requests.post(f"{API_URL}/predict", json=payload, headers=HEADERS, timeout=TIMEOUT)
             if response.status_code == 200:
                 body = response.json()
                 st.session_state.result = {
                     "prediction": body["prediction"],
                     "probability": body["churn_probability"],
                     "log_id": body["log_id"],
+                    "threshold": body.get("decision_threshold", 0.5),
+                    "drivers": body.get("top_drivers", []),
                     "geography": geography,
                     "age": int(age),
                     "products": int(num_products),
                     "active": bool(is_active),
+                }
+            elif response.status_code == 401:
+                st.session_state.result = {
+                    "error": "The API rejected the key. Set the same API_KEY for the "
+                             "dashboard and the API (see .env.example)."
                 }
             elif response.status_code == 422:
                 details = response.json().get("detail", [])
@@ -277,7 +300,7 @@ with col_right:
                   <div class="risk-fill" style="width:{prob * 100:.1f}%;background:{colour}"></div>
                 </div>
                 <div class="risk-scale"><span>0%</span>
-                  <span>decision threshold {DECISION_THRESHOLD:.0%}</span><span>100%</span></div>
+                  <span>decision threshold {result['threshold']:.0%}</span><span>100%</span></div>
                 <div class="meta-row">
                   <span class="chip">Log <b>#{result['log_id']}</b></span>
                   <span class="chip">Geography <b>{result['geography']}</b></span>
@@ -288,9 +311,29 @@ with col_right:
                 """,
                 unsafe_allow_html=True,
             )
+
+            if result.get("drivers"):
+                st.markdown('<p class="section-label" style="margin-top:1.1rem">Why</p>', unsafe_allow_html=True)
+                rows = ""
+                for d in result["drivers"]:
+                    up = d["contribution"] > 0
+                    arrow = "▲" if up else "▼"
+                    colour = "#ef4444" if up else "#22c55e"
+                    label = "toward churn" if up else "toward staying"
+                    rows += (
+                        f'<div class="driver"><span class="driver-name">{d["feature"]}</span>'
+                        f'<span class="driver-val" style="color:{colour}">{arrow} {abs(d["contribution"]):.2f}</span>'
+                        f'<span class="driver-dir">{label}</span></div>'
+                    )
+                st.markdown(f'<div class="drivers">{rows}</div>', unsafe_allow_html=True)
+                st.caption(
+                    "Contributions are SHAP values in log-odds from the CatBoost model: "
+                    "how much each feature moved this customer's score from the average."
+                )
             st.caption(
                 f"Labelled **{result['prediction']}** because the probability is "
-                f"{'above' if high else 'at or below'} the {DECISION_THRESHOLD:.0%} decision threshold."
+                f"{'at or above' if high else 'below'} the model's decision threshold of "
+                f"{result['threshold']:.1%} (chosen on out-of-fold data to favour recall)."
             )
 
     with tab_history:
@@ -306,7 +349,7 @@ with col_right:
             # column, and a wider set of columns clips the probability bar.
             view = logs_df[
                 ["id", "created_at", "surname", "geography",
-                 "prediction_label", "churn_probability"]
+                 "prediction_label", "churn_probability", "actual_label"]
             ].copy()
             view["created_at"] = pd.to_datetime(view["created_at"]).dt.strftime("%d %b %H:%M")
             # ProgressColumn formats the raw value, so scale to percent here
@@ -327,6 +370,39 @@ with col_right:
                     "churn_probability": st.column_config.ProgressColumn(
                         "Risk", min_value=0.0, max_value=100.0, format="%.1f%%"
                     ),
+                    "actual_label": st.column_config.TextColumn("Outcome", width="small"),
                 },
             )
             st.caption(f"Showing the {len(view)} most recent predictions.")
+
+            st.markdown('<p class="section-label" style="margin-top:1rem">Record outcome</p>', unsafe_allow_html=True)
+            unlabeled = logs_df[logs_df["actual_label"].isna()]["id"].tolist()
+            if not unlabeled:
+                st.caption("Every listed prediction already has an outcome.")
+            else:
+                with st.form("feedback_form", border=False):
+                    f1, f2, f3 = st.columns([1, 1.3, 1])
+                    with f1:
+                        fb_id = st.selectbox("Log #", unlabeled)
+                    with f2:
+                        fb_label = st.radio("What happened?", ["CHURN", "LOYAL"], horizontal=True)
+                    with f3:
+                        st.write("")
+                        fb_submit = st.form_submit_button("Save", use_container_width=True)
+                if fb_submit:
+                    try:
+                        r = requests.post(f"{API_URL}/feedback/{fb_id}", json={"actual_label": fb_label},
+                                          headers=HEADERS, timeout=TIMEOUT)
+                        if r.status_code == 200:
+                            st.success(f"Outcome for #{fb_id} recorded as {fb_label}.")
+                            st.rerun()
+                        elif r.status_code == 409:
+                            st.warning(r.json().get("detail", "Already recorded."))
+                        else:
+                            st.error(f"Server returned {r.status_code}.")
+                    except requests.RequestException as e:
+                        st.error(friendly_error(e))
+                st.caption(
+                    "Outcomes are written once and cannot be changed. They are what turns "
+                    "this log into training data."
+                )
