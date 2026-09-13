@@ -10,8 +10,8 @@ API_TO_MODEL_COLUMNS = {
 }
 
 class CustomerInput(BaseModel):
-    CustomerId: int = Field(..., examples=[15634602])
-    Surname: str = Field(..., examples=["Yilmaz"])
+    CustomerId: Optional[int] = Field(default=None, examples=[15634602])
+    Surname: Optional[str] = Field(default=None, examples=["Yilmaz"])
     CreditScore: int = Field(..., ge=300, le=850, examples=[619])
     Geography: Literal["France", "Germany", "Spain"] = Field(..., examples=["France"])
     Gender: Literal["Female", "Male"] = Field(..., examples=["Female"])
@@ -27,17 +27,23 @@ class CustomerInput(BaseModel):
     PointEarned: int = Field(..., ge=0, examples=[500])
 
     def to_model_row(self) -> dict:
-        """Return the payload keyed by the column names the model expects."""
         row = self.model_dump()
         for api_name, model_name in API_TO_MODEL_COLUMNS.items():
             row[model_name] = row.pop(api_name)
         return row
 
 
+class Driver(BaseModel):
+    feature: str
+    contribution: float
+
+
 class PredictionResponse(BaseModel):
     prediction: Literal["CHURN", "LOYAL"]
     churn_probability: float
+    decision_threshold: float
     log_id: int
+    top_drivers: list[Driver]
 
 
 class PredictionLogOut(BaseModel):
@@ -63,6 +69,12 @@ class PredictionLogOut(BaseModel):
     model_version: Optional[str]
     prediction_label: str
     churn_probability: float
+    actual_label: Optional[str]
+    labeled_at: Optional[datetime]
+
+
+class FeedbackRequest(BaseModel):
+    actual_label: Literal["CHURN", "LOYAL"]
 
 
 class HealthResponse(BaseModel):
@@ -72,8 +84,6 @@ class HealthResponse(BaseModel):
     model_loaded: bool
     model_path: str
     model_version: str
+    decision_threshold: float
     database: str
 
-
-class MessageResponse(BaseModel):
-    message: str

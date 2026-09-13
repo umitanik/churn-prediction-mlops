@@ -1,17 +1,23 @@
+import logging
 import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from src.api.dependencies import (
     get_db,
+    get_decision_threshold,
     get_model,
     get_model_version,
     get_preprocessor,
+    require_api_key,
 )
 from src.api.schemas import CustomerInput, PredictionResponse
 from src.database.db import PredictionLog
+from src.ml.explain import top_drivers
 
-router = APIRouter(tags=["Prediction"])
+logger = logging.getLogger(__name__)
+
+router = APIRouter(tags=["Prediction"], dependencies=[Depends(require_api_key)])
 
 
 @router.post("/predict", response_model=PredictionResponse)
@@ -21,18 +27,19 @@ def predict_churn(
     model=Depends(get_model),
     preprocessor=Depends(get_preprocessor),
     model_version: str = Depends(get_model_version),
+    threshold: float = Depends(get_decision_threshold),
 ):
     df = pd.DataFrame([customer.to_model_row()])
 
     try:
         features = preprocessor.preprocess(df)
-        prediction = model.predict(features)[0]
-        probability = model.predict_proba(features)[0][1]
-    except Exception as e:
-        print(f"ERROR during inference: {e}")
+        probability = float(model.predict_proba(features)[0][1])
+        drivers = top_drivers(model, features)
+    except Exception:
+        logger.exception("Inference failed for customer_id=%s", customer.CustomerId)
         raise HTTPException(status_code=500, detail="Prediction failed.")
 
-    result_label = "CHURN" if prediction == 1 else "LOYAL"
+    result_label = "CHURN" if probability >= threshold else "LOYAL"
 
     new_log = PredictionLog(
         customer_id=customer.CustomerId,
@@ -52,7 +59,7 @@ def predict_churn(
         point_earned=customer.PointEarned,
         model_version=model_version,
         prediction_label=result_label,
-        churn_probability=float(probability),
+        churn_probability=probability,
     )
 
     db.add(new_log)
@@ -61,6 +68,8 @@ def predict_churn(
 
     return PredictionResponse(
         prediction=result_label,
-        churn_probability=round(float(probability), 4),
+        churn_probability=round(probability, 6),
+        decision_threshold=threshold,
         log_id=new_log.id,
+        top_drivers=drivers,
     )

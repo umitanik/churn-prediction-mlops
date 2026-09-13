@@ -30,5 +30,6 @@ def health(request: Request, response: Response, db: Session = Depends(get_db)):
         model_loaded=model_loaded,
         model_path=MODEL_PATH,
         model_version=getattr(request.app.state, "model_version", "unknown"),
+        decision_threshold=getattr(request.app.state, "decision_threshold", 0.5),
         database=database_status,
     )
