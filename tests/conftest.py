@@ -1,19 +1,17 @@
 import os
-import sys
 import tempfile
 from pathlib import Path
 
 import pytest
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(PROJECT_ROOT))
 os.chdir(PROJECT_ROOT)
 
-# setdefault, not assignment: a second import of this module must reuse the
-# first database rather than silently pointing at a fresh empty one.
 os.environ.setdefault(
     "DATABASE_URL", f"sqlite:///{Path(tempfile.mkdtemp()) / 'test.db'}"
 )
+os.environ.setdefault("API_KEY", "test-key-not-a-secret")
+TEST_API_KEY = os.environ["API_KEY"]
 
 import joblib
 import pandas as pd
@@ -95,7 +93,7 @@ def client(trained_model):
     """
     from src.api.main import app
 
-    with TestClient(app) as test_client:
+    with TestClient(app, headers={"X-API-Key": TEST_API_KEY}) as test_client:
         yield test_client
 
 

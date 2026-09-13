@@ -1,6 +1,8 @@
 import pytest
 
-PREDICTION_KEYS = {"prediction", "churn_probability", "log_id"}
+from tests.conftest import TEST_API_KEY
+
+PREDICTION_KEYS = {"prediction", "churn_probability", "decision_threshold", "log_id", "top_drivers"}
 
 
 def test_health_reports_a_loaded_model(client):
@@ -121,14 +123,125 @@ def test_logs_respects_the_limit(client, payload):
     assert len(client.get("/logs", params={"limit": 2}).json()) == 2
 
 
-def test_delete_removes_the_log(client, payload):
-    log_id = client.post("/predict", json=payload).json()["log_id"]
+def test_nothing_in_the_api_accepts_delete(client):
+    """An audit trail with a DELETE endpoint is not an audit trail.
 
-    assert client.delete(f"/logs/{log_id}").status_code == 200
+    Checked structurally against the registered routes rather than by status
+    code, so it holds no matter how the log endpoints are reorganised.
+    """
+    from src.api.main import app
 
-    remaining = {entry["id"] for entry in client.get("/logs", params={"limit": 100}).json()}
-    assert log_id not in remaining
+    deletable = [r.path for r in app.routes if "DELETE" in getattr(r, "methods", set())]
+
+    assert deletable == []
 
 
-def test_deleting_an_unknown_log_is_not_found(client):
-    assert client.delete("/logs/999999").status_code == 404
+def test_health_is_open_without_a_key(client):
+    """Health checks come from load balancers and Docker, which carry no key."""
+    response = client.get("/health", headers={"X-API-Key": ""})
+
+    assert response.status_code == 200
+
+
+@pytest.mark.parametrize("path, method", [("/predict", "post"), ("/logs", "get")])
+def test_missing_key_is_unauthorized(client, payload, path, method):
+    request = getattr(client, method)
+    kwargs = {"json": payload} if method == "post" else {}
+
+    response = request(path, headers={"X-API-Key": ""}, **kwargs)
+
+    assert response.status_code == 401
+
+
+@pytest.mark.parametrize("path, method", [("/predict", "post"), ("/logs", "get")])
+def test_wrong_key_is_unauthorized(client, payload, path, method):
+    request = getattr(client, method)
+    kwargs = {"json": payload} if method == "post" else {}
+
+    response = request(path, headers={"X-API-Key": TEST_API_KEY + "x"}, **kwargs)
+
+    assert response.status_code == 401
+
+
+def test_unauthorized_request_writes_nothing(client, payload):
+    """Rejected calls must not leave a trace in the audit log."""
+    before = {e["id"] for e in client.get("/logs", params={"limit": 100}).json()}
+
+    client.post("/predict", json=payload, headers={"X-API-Key": "wrong"})
+
+    after = {e["id"] for e in client.get("/logs", params={"limit": 100}).json()}
+    assert after == before
+
+
+def test_prediction_explains_itself(client, payload):
+    """Every prediction names the features that drove it."""
+    drivers = client.post("/predict", json=payload).json()["top_drivers"]
+
+    assert len(drivers) == 3
+    for driver in drivers:
+        assert set(driver) == {"feature", "contribution"}
+        assert isinstance(driver["contribution"], float)
+
+
+def test_drivers_are_ordered_by_influence(client, payload):
+    drivers = client.post("/predict", json=payload).json()["top_drivers"]
+    magnitudes = [abs(d["contribution"]) for d in drivers]
+
+    assert magnitudes == sorted(magnitudes, reverse=True)
+
+
+def test_drivers_name_real_model_features(client, payload):
+    """A driver must be a column the model actually consumes."""
+    from src.api.schemas import API_TO_MODEL_COLUMNS
+
+    drivers = client.post("/predict", json=payload).json()["top_drivers"]
+    raw_columns = set(payload) - {"CustomerId", "Surname"}
+    known = ({API_TO_MODEL_COLUMNS.get(c, c) for c in raw_columns}
+             | {"BalanceSalaryRatio", "TenureByAge", "HasBalance", "CreditScoreGivenAge"})
+
+    for driver in drivers:
+        base = driver["feature"].split("_")[0]
+        assert driver["feature"] in known or base in known, driver["feature"]
+
+
+def test_age_drives_an_older_inactive_customer(client, payload):
+    """Sanity-check the explanation against what the EDA found.
+
+    Age was the strongest single signal (r = 0.29) and inactive members churn
+    more. An old, inactive customer should have Age among the top drivers, and
+    it should push toward churn.
+    """
+    payload.update({"Age": 65, "IsActiveMember": 0})
+
+    drivers = {d["feature"]: d["contribution"] for d in
+               client.post("/predict", json=payload).json()["top_drivers"]}
+
+    assert "Age" in drivers
+    assert drivers["Age"] > 0
+
+
+def test_health_reports_the_decision_threshold(client):
+    body = client.get("/health").json()
+
+    assert 0.0 < body["decision_threshold"] < 1.0
+
+
+def test_label_follows_the_stored_threshold_not_a_hardcoded_half(client, payload):
+    """The label is a business decision the artifact carries, not model.predict().
+
+    Every prediction must agree with its own reported threshold. Scanning a
+    range of ages finds customers on both sides of it; any probability in
+    the open interval between the threshold and 0.5 exposes a label that
+    silently reverted to the default.
+    """
+    seen_churn = seen_loyal = False
+    for age in range(20, 80, 5):
+        body = dict(payload, Age=age)
+        response = client.post("/predict", json=body).json()
+        expected = "CHURN" if response["churn_probability"] >= response["decision_threshold"] else "LOYAL"
+
+        assert response["prediction"] == expected, response
+        seen_churn |= response["prediction"] == "CHURN"
+        seen_loyal |= response["prediction"] == "LOYAL"
+
+    assert seen_churn and seen_loyal, "age sweep did not cross the threshold"

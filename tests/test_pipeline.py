@@ -109,3 +109,20 @@ def test_probability_is_a_valid_probability(trained_model, preprocessor, payload
     probability = score(trained_model, preprocessor, payload)
 
     assert 0.0 <= probability <= 1.0
+
+
+def test_artifact_carries_a_decision_threshold(trained_model):
+    """The threshold is part of the model, chosen at training time.
+
+    Leaving it to the serving layer means every deployment silently gets
+    0.5, which for churn is the wrong side of the recall/precision trade.
+    """
+    threshold = getattr(trained_model, "decision_threshold_", None)
+
+    assert threshold is not None
+    assert 0.0 < threshold < 1.0
+
+
+def test_threshold_favours_recall_over_the_default(trained_model, preprocessor, train_frame):
+    """F2 selection must land below 0.5: it exists to catch more churners."""
+    assert trained_model.decision_threshold_ < 0.5
