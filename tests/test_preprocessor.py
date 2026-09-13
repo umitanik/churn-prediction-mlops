@@ -36,12 +36,19 @@ def test_single_row_and_batch_produce_the_same_values(preprocessor, train_frame)
 
 
 def test_categorical_columns_are_left_unencoded(preprocessor, train_frame):
-    """Encoding is the pipeline's job, so the raw categories must survive."""
+    """Encoding is the pipeline's job, so the raw categories must survive.
+
+    Checked on the values rather than the dtype: pandas 2 stores text as
+    object, pandas 3 as StringDtype, and either is fine as long as no one-hot
+    columns have appeared and the original labels are still there.
+    """
     out = preprocessor.preprocess(train_frame.copy())
 
     for column in CAT_COLS:
         assert column in out.columns
-        assert out[column].dtype == object
+        assert pd.api.types.is_string_dtype(out[column])
+        assert set(out[column].unique()) == set(train_frame[column].unique())
+        assert not any(c.startswith(f"{column}_") for c in out.columns)
 
 
 @pytest.mark.parametrize("column", ["RowNumber", "CustomerId", "Surname"])
