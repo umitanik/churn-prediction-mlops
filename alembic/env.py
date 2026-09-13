@@ -1,5 +1,4 @@
 import os
-import sys
 from logging.config import fileConfig
 from pathlib import Path
 
@@ -7,13 +6,12 @@ from alembic import context
 from sqlalchemy import engine_from_config, pool
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.database.db import DATABASE_URL, Base
+from src.database.db import Base
 import src.database.db
 
 config = context.config
-config.set_main_option("sqlalchemy.url", os.getenv("DATABASE_URL", DATABASE_URL))
+config.set_main_option("sqlalchemy.url", os.environ["DATABASE_URL"])
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
